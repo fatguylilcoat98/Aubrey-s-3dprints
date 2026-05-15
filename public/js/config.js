@@ -14,4 +14,4 @@
 export const API_BASE =
   (typeof window !== 'undefined' && window.PRINTBUDDY_API_BASE) || '';
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';

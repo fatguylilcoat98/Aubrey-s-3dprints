@@ -5,25 +5,41 @@
  * Created with the help of AI collaborators (Claude · GPT · Gemini · Groq)
  * Truth · Safety · We Got Your Back
  *
- * Mode 2 — Generate with AI. Posts a prompt to the /api/generate proxy
- * (Tripo default, Meshy optional), polls for the model, previews the
- * GLB and lets her download a print-ready STL.
+ * Mode 2 — Generate with AI. Two stages:
+ *   1. Aubrey's plain words + structured choices → /api/enhance (Claude
+ *      rewrites them into a print-ready prompt; she sees both).
+ *   2. The enhanced (or hand-edited) prompt → /api/generate (Tripo),
+ *      poll, preview the GLB, sanity-check the mesh, download STL.
  */
 
 import { API_BASE } from './config.js';
 
 export function initGenerate() {
   const form = document.getElementById('genForm');
-  const input = document.getElementById('genInput');
+  const desc = document.getElementById('genDesc');
+  const purpose = document.getElementById('genPurpose');
+  const style = document.getElementById('genStyle');
   const btn = document.getElementById('genBtn');
   const statusEl = document.getElementById('genStatus');
+
+  const promptsEl = document.getElementById('genPrompts');
+  const yourIdeaEl = document.getElementById('genYourIdea');
+  const optBox = document.getElementById('genOptBox');
+  const enhancedEl = document.getElementById('genEnhanced');
+  const enhByEl = document.getElementById('genEnhBy');
+  const editToggle = document.getElementById('genEditToggle');
+
   const wrap = document.getElementById('genViewerWrap');
+  const checkEl = document.getElementById('genPrintCheck');
   const dlBtn = document.getElementById('genDownload');
   const regenBtn = document.getElementById('genRegen');
+  const resetBtn = document.getElementById('genReset');
+  const creditChip = document.getElementById('creditChip');
 
   let viewer = null;
-  let lastPrompt = '';
   let polling = false;
+  let currentPrompt = '';
+  let editing = false;
 
   async function ensureViewer() {
     if (viewer) return viewer;
@@ -32,12 +48,66 @@ export function initGenerate() {
     return viewer;
   }
 
-  async function run(prompt) {
+  const sizeVal = () =>
+    document.querySelector('input[name="genSize"]:checked')?.value || 'medium';
+
+  /* ---- credits ----------------------------------------------------- */
+  async function refreshCredits() {
+    try {
+      const r = await fetch(`${API_BASE}/api/credits`);
+      const d = await r.json();
+      if (typeof d.available !== 'number') {
+        creditChip.hidden = true;
+        return;
+      }
+      creditChip.hidden = false;
+      creditChip.classList.toggle('warn', d.available < 100 && d.available >= 25);
+      creditChip.classList.toggle('low', d.available < 25);
+      const topup =
+        d.available < 100
+          ? ' · <a href="https://platform.tripo3d.ai/" target="_blank" rel="noopener noreferrer">top up</a>'
+          : '';
+      creditChip.innerHTML = `🪙 ${d.available} Tripo credits left${topup}`;
+    } catch {
+      creditChip.hidden = true;
+    }
+  }
+
+  /* ---- stage 1: enhance ------------------------------------------- */
+  async function enhance() {
+    const description = desc.value.trim();
+    if (!description) return null;
+    statusEl.textContent = 'Polishing your idea into a print-ready prompt…';
+    const r = await fetch(`${API_BASE}/api/enhance`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        description,
+        purpose: purpose.value,
+        size: sizeVal(),
+        style: style.value,
+      }),
+    });
+    if (!r.ok) throw new Error(`Enhancer failed (HTTP ${r.status})`);
+    const d = await r.json();
+    yourIdeaEl.textContent = description;
+    enhancedEl.value = d.enhanced;
+    enhByEl.textContent =
+      d.enhanced_by === 'fallback'
+        ? '(built-in prompt — add ANTHROPIC_API_KEY for smarter rewrites)'
+        : '(rewritten by Claude)';
+    promptsEl.hidden = false;
+    return d.enhanced;
+  }
+
+  /* ---- stage 2: generate ------------------------------------------ */
+  async function generate(prompt) {
     if (polling) return;
-    lastPrompt = prompt;
+    currentPrompt = prompt;
     btn.disabled = true;
     dlBtn.disabled = true;
-    statusEl.textContent = 'Sending your idea to the AI…';
+    regenBtn.disabled = true;
+    statusEl.textContent = 'Sending the print-ready prompt to the AI…';
     try {
       const r = await fetch(`${API_BASE}/api/generate`, {
         method: 'POST',
@@ -48,8 +118,8 @@ export function initGenerate() {
       if (r.status === 503) {
         statusEl.innerHTML =
           '🔌 AI generation isn’t switched on yet. Add a free ' +
-          '<strong>TRIPO_API_KEY</strong> on the server (see the README) ' +
-          'and Mode 2 lights up. Modes 1 &amp; 3 work without it.';
+          '<strong>TRIPO_API_KEY</strong> on the server (see the README). ' +
+          'Modes 1 &amp; 3 work without it.';
         btn.disabled = false;
         return;
       }
@@ -115,24 +185,60 @@ export function initGenerate() {
     const v = await ensureViewer();
     try {
       await v.loadGLB(url);
-      statusEl.innerHTML =
-        '✅ Done. Remember: check for thin walls and add supports before printing.';
+      const { analyzeMesh } = await import('./viewer.js');
+      const a = analyzeMesh(v.currentGeometry);
+      checkEl.className = `print-check ${a.verdict}`;
+      const icon = { ok: '✅', warn: '⚠', bad: '⛔' }[a.verdict];
+      checkEl.textContent = `${icon} ${a.message}`;
+      statusEl.textContent = 'Done. Always preview in your slicer before printing.';
       dlBtn.disabled = false;
       regenBtn.disabled = false;
+      refreshCredits();
     } catch (err) {
       statusEl.textContent = `Couldn’t load the model: ${err.message}`;
     }
     btn.disabled = false;
   }
 
-  form.addEventListener('submit', (e) => {
+  /* ---- events ------------------------------------------------------ */
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const q = input.value.trim();
-    if (q) run(q);
+    btn.disabled = true;
+    try {
+      const enhanced = await enhance();
+      if (enhanced) await generate(enhanced);
+    } catch (err) {
+      statusEl.textContent = `Couldn’t prep your prompt: ${err.message}`;
+      btn.disabled = false;
+    }
   });
 
   regenBtn.addEventListener('click', () => {
-    if (lastPrompt) run(lastPrompt);
+    if (currentPrompt) generate(currentPrompt);
+  });
+
+  editToggle.addEventListener('click', () => {
+    editing = !editing;
+    enhancedEl.toggleAttribute('readonly', !editing);
+    if (editing) {
+      optBox.open = true;
+      enhancedEl.focus();
+      editToggle.textContent = '↻ Regenerate with my edits';
+    } else {
+      editToggle.textContent = '✎ Edit & regenerate';
+      const edited = enhancedEl.value.trim();
+      if (edited) generate(edited);
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    wrap.hidden = true;
+    promptsEl.hidden = true;
+    checkEl.textContent = '';
+    checkEl.className = 'print-check';
+    statusEl.textContent = '';
+    desc.value = '';
+    desc.focus();
   });
 
   dlBtn.addEventListener('click', () => {
@@ -146,6 +252,8 @@ export function initGenerate() {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   });
+
+  refreshCredits();
 
   return { setColor: (hex) => viewer?.setColor(hex) };
 }

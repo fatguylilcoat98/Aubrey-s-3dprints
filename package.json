@@ -1,6 +1,6 @@
 {
   "name": "printbuddy",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "PrintBuddy — a browser-based 3D print helper. The Good Neighbor Guard.",
   "type": "module",

@@ -100,6 +100,60 @@ export function geometryVolumeMm3(geometry) {
   return Math.abs(vol);
 }
 
+/**
+ * Lightweight printability sanity check for AI-generated meshes.
+ * Counts boundary edges (an edge used by ≠2 triangles → not watertight)
+ * and the smallest bounding dimension (thin-wall proxy).
+ * @returns {{triangles:number, openEdges:number, watertight:boolean,
+ *   minDimMm:number, verdict:'ok'|'warn'|'bad', message:string}}
+ */
+export function analyzeMesh(geometry) {
+  const g = geometry.index ? geometry.toNonIndexed() : geometry;
+  const p = g.getAttribute('position');
+  const tris = p.count / 3;
+
+  const key = (i) =>
+    `${Math.round(p.getX(i) * 100)},${Math.round(p.getY(i) * 100)},${Math.round(
+      p.getZ(i) * 100
+    )}`;
+  const edges = new Map();
+  const addEdge = (a, b) => {
+    const e = a < b ? `${a}|${b}` : `${b}|${a}`;
+    edges.set(e, (edges.get(e) || 0) + 1);
+  };
+  for (let i = 0; i < p.count; i += 3) {
+    const k0 = key(i), k1 = key(i + 1), k2 = key(i + 2);
+    addEdge(k0, k1);
+    addEdge(k1, k2);
+    addEdge(k2, k0);
+  }
+  let openEdges = 0;
+  for (const c of edges.values()) if (c !== 2) openEdges++;
+
+  g.computeBoundingBox();
+  const s = new THREE.Vector3();
+  g.boundingBox.getSize(s);
+  const minDimMm = Math.min(s.x, s.y, s.z);
+
+  let verdict = 'ok';
+  let message = 'Looks watertight and printable. Still eyeball it in your slicer.';
+  if (openEdges > 0 || tris < 50) {
+    verdict = openEdges > tris * 0.05 ? 'bad' : 'warn';
+    message =
+      `Mesh has ${openEdges} open edge${openEdges === 1 ? '' : 's'} — ` +
+      (verdict === 'bad'
+        ? 'likely not watertight. Regenerate, or repair in your slicer / Meshmixer before printing.'
+        : 'minor gaps. Most slicers can auto-repair this; check before printing.');
+  }
+  if (verdict === 'ok' && minDimMm < 2) {
+    verdict = 'warn';
+    message = `Thinnest dimension is ~${minDimMm.toFixed(
+      1
+    )}mm — may be too thin to print. Scale up or thicken before printing.`;
+  }
+  return { triangles: tris, openEdges, watertight: openEdges === 0, minDimMm, verdict, message };
+}
+
 export class Viewer {
   constructor(container) {
     this.container = container;

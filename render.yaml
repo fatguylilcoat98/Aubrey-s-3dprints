@@ -18,3 +18,5 @@ services:
         sync: false
       - key: THINGIVERSE_API_KEY
         sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false

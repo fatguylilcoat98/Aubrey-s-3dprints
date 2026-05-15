@@ -27,13 +27,14 @@ const PORT = process.env.PORT || 3000;
 const TRIPO_API_KEY = process.env.TRIPO_API_KEY || '';
 const MESHY_API_KEY = process.env.MESHY_API_KEY || '';
 const THINGIVERSE_API_KEY = process.env.THINGIVERSE_API_KEY || '';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 
 app.use(compression());
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 /* ------------------------------------------------------------------ */
 /*  Health                                                            */
@@ -46,6 +47,7 @@ app.get('/api/health', (_req, res) => {
       libraryProxy: true,
       thingiverse: Boolean(THINGIVERSE_API_KEY),
       aiGenerate: Boolean(TRIPO_API_KEY || MESHY_API_KEY),
+      promptEnhancer: Boolean(ANTHROPIC_API_KEY),
       providers: {
         tripo: Boolean(TRIPO_API_KEY),
         meshy: Boolean(MESHY_API_KEY),
@@ -223,6 +225,159 @@ app.get('/api/search', async (req, res) => {
   });
 
   res.json({ query: q, count: results.length, sources, results });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Mode 2 — Prompt enhancer (Claude turns plain English into a       */
+/*  print-ready Tripo prompt). System prompt is large + static, so    */
+/*  it is cached with cache_control to cut latency/cost on repeats.    */
+/* ------------------------------------------------------------------ */
+
+const ENHANCER_SYSTEM = `You are a 3D model prompt engineer specialized in creating print-ready prompts for AI 3D generators like Tripo and Meshy.
+
+Your job: Take a user's simple description and transform it into a detailed prompt that will produce a model optimized for FDM 3D printing.
+
+CONSTRAINTS that must be in every prompt you generate:
+- Solid, watertight geometry — no thin walls under 2mm equivalent, no floating disconnected parts
+- Flat base for printing stability — the model should sit flat on a print bed
+- Minimal overhangs — features should be supported by geometry beneath them, or at angles under 45 degrees from vertical
+- No internal cavities that can't be drained — model must be printable with standard FDM
+- Single connected piece — no separate floating elements
+- Detail level: moderate — too much fine detail won't print cleanly on consumer printers (0.2mm-0.4mm nozzle resolution)
+- Walls thick enough to print — at least 1.5mm equivalent in scale
+
+INPUTS YOU'LL RECEIVE:
+- description: what user wants
+- purpose: decoration / gift / useful / toy / wearable / planter
+- size: small / medium / large
+- style: realistic / cartoon / geometric / cute_animals / fantasy / simple
+
+OUTPUT FORMAT:
+Return only the enhanced prompt, no preamble, no explanation. The prompt should be a single paragraph, descriptive but focused, written in the style Tripo responds to best.
+
+EXAMPLES:
+
+Input:
+  description: "a dragon"
+  purpose: "decoration"
+  size: "small"
+  style: "cute/cartoon"
+
+Output:
+A cute chibi-style baby dragon figurine sitting upright with a rounded body, small folded wings tucked against the back, a thick tail curled around its feet for stability, large friendly eyes, and a flat solid base. Smooth surfaces with simplified scales suggested rather than detailed. Solid watertight body, no overhangs greater than 45 degrees, designed as a single connected piece for FDM 3D printing. Approximately 60mm tall.
+
+Input:
+  description: "phone stand"
+  purpose: "useful"
+  size: "medium"
+  style: "geometric/modern"
+
+Output:
+A minimalist geometric phone stand with clean angular lines, featuring a flat base approximately 100mm wide for stability, a back support angled at 65 degrees from the base to hold a phone in landscape or portrait orientation, a small lip at the bottom front to prevent the phone from sliding off, hollow underside for material efficiency but with solid load-bearing walls at least 3mm thick, single connected piece optimized for FDM 3D printing without supports.
+
+Input:
+  description: "name tag for Aubrey"
+  purpose: "decoration"
+  size: "small"
+  style: "cute/cartoon"
+
+Output:
+A decorative name plate spelling "Aubrey" in bold rounded sans-serif letters with the text raised approximately 3mm above a flat rectangular base measuring approximately 80mm wide by 25mm tall by 5mm thick, with rounded corners on the base, small heart shapes flanking either side of the name as accents, solid construction throughout, designed as a single connected piece sitting flat for FDM 3D printing without supports.`;
+
+// Deterministic fallback so Mode 2 still works if the enhancer is down /
+// not configured — better a decent prompt than a dead button.
+function fallbackPrompt({ description, purpose, size, style }) {
+  const mm = { small: '40-60mm', medium: '80-120mm', large: '150-200mm' };
+  return (
+    `${description}, ${String(style || 'simple').replace('_', ' ')} style, ` +
+    `intended as a ${purpose || 'decoration'}. Solid watertight single piece ` +
+    `with a flat base for FDM 3D printing, walls at least 2mm thick, no thin ` +
+    `parts or overhangs greater than 45 degrees, approximately ${mm[size] || '80-120mm'}.`
+  );
+}
+
+app.post('/api/enhance', async (req, res) => {
+  const description = String(req.body?.description || '').trim();
+  const purpose = String(req.body?.purpose || 'decoration').trim();
+  const size = String(req.body?.size || 'medium').trim();
+  const style = String(req.body?.style || 'simple').trim();
+  if (!description) return res.status(400).json({ error: 'Missing description' });
+
+  const userBlock =
+    `description: "${description}"\n` +
+    `purpose: "${purpose}"\n` +
+    `size: "${size}"\n` +
+    `style: "${style}"`;
+
+  if (!ANTHROPIC_API_KEY) {
+    return res.json({
+      enhanced: fallbackPrompt({ description, purpose, size, style }),
+      enhanced_by: 'fallback',
+    });
+  }
+
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 500,
+        thinking: { type: 'disabled' },
+        // Large static prompt first + cache_control → cheap cache reads on
+        // every subsequent enhance. Volatile input goes in messages, after
+        // the cached prefix, so it never invalidates the cache.
+        system: [
+          {
+            type: 'text',
+            text: ENHANCER_SYSTEM,
+            cache_control: { type: 'ephemeral' },
+          },
+        ],
+        messages: [{ role: 'user', content: userBlock }],
+      }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j?.error?.message || `Anthropic HTTP ${r.status}`);
+    const enhanced = (j.content || [])
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text)
+      .join('')
+      .trim();
+    if (!enhanced) throw new Error('Empty enhancement');
+    res.json({ enhanced, enhanced_by: 'claude-sonnet-4-6' });
+  } catch (err) {
+    // Never hard-fail the user — degrade to the deterministic prompt.
+    res.json({
+      enhanced: fallbackPrompt({ description, purpose, size, style }),
+      enhanced_by: 'fallback',
+      note: err.message,
+    });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  Tripo credit balance (so Aubrey never runs out unknowingly)       */
+/* ------------------------------------------------------------------ */
+app.get('/api/credits', async (_req, res) => {
+  if (!TRIPO_API_KEY) return res.json({ available: null, reason: 'no_key' });
+  try {
+    const r = await fetch('https://api.tripo3d.ai/v2/openapi/user/balance', {
+      headers: { authorization: `Bearer ${TRIPO_API_KEY}` },
+    });
+    const j = await r.json();
+    if (!r.ok || j.code !== 0)
+      throw new Error(j?.message || `Tripo HTTP ${r.status}`);
+    const d = j.data || {};
+    const available = typeof d.balance === 'number' ? d.balance : null;
+    res.json({ available, raw: d });
+  } catch (err) {
+    res.json({ available: null, reason: 'error', message: err.message });
+  }
 });
 
 /* ------------------------------------------------------------------ */

@@ -125,30 +125,89 @@
           <div class="panel-head">
             <h2>Generate with AI</h2>
             <p>
-              Describe what you want and an AI builds a 3D model. Honest heads-up
-              below — these need cleanup before they print well.
+              Tell PrintBuddy what you want in plain words. It quietly rewrites
+              your idea into a print-ready prompt before the AI builds it.
             </p>
           </div>
           <div class="warn-box">
             ⚠ AI-generated models may need cleanup before printing. Check for
             thin walls, floating bits, and add supports where needed.
           </div>
-          <form class="search-bar" id="genForm">
-            <input
-              type="text"
-              id="genInput"
-              placeholder="a small dragon figurine sitting, a heart-shaped keychain…"
-              autocomplete="off"
-            />
-            <button class="btn btn-primary" type="submit" id="genBtn">
-              Generate
-            </button>
-          </form>
+
+          <div class="gen-top">
+            <form class="gen-form" id="genForm">
+              <label class="field">
+                <span>What do you want to make?</span>
+                <input
+                  type="text"
+                  id="genDesc"
+                  placeholder="a small dragon figurine sitting"
+                  autocomplete="off"
+                  required
+                />
+              </label>
+              <label class="field">
+                <span>What's it for?</span>
+                <select id="genPurpose">
+                  <option value="decoration">Decoration</option>
+                  <option value="gift">Gift</option>
+                  <option value="useful">Useful thing</option>
+                  <option value="toy">Toy / figurine</option>
+                  <option value="wearable">Wearable</option>
+                  <option value="planter">Planter / holder</option>
+                </select>
+              </label>
+              <fieldset class="field gen-size">
+                <span>How big?</span>
+                <div class="radio-row">
+                  <label><input type="radio" name="genSize" value="small" /> Small <i>40–60mm</i></label>
+                  <label><input type="radio" name="genSize" value="medium" checked /> Medium <i>80–120mm</i></label>
+                  <label><input type="radio" name="genSize" value="large" /> Large <i>150–200mm</i></label>
+                </div>
+              </fieldset>
+              <label class="field">
+                <span>Style</span>
+                <select id="genStyle">
+                  <option value="realistic">Realistic</option>
+                  <option value="cartoon">Cute / cartoon</option>
+                  <option value="geometric">Geometric / modern</option>
+                  <option value="cute_animals">Cute animals</option>
+                  <option value="fantasy">Fantasy</option>
+                  <option value="simple" selected>Simple</option>
+                </select>
+              </label>
+              <button class="btn btn-primary" type="submit" id="genBtn">
+                Make it
+              </button>
+            </form>
+
+            <div class="credit-chip" id="creditChip" hidden></div>
+          </div>
+
+          <div class="gen-prompts" id="genPrompts" hidden>
+            <div class="prompt-box">
+              <h4>Your idea</h4>
+              <p id="genYourIdea"></p>
+            </div>
+            <details class="prompt-box" id="genOptBox">
+              <summary>Optimized for printing <span id="genEnhBy"></span></summary>
+              <textarea id="genEnhanced" rows="5" readonly></textarea>
+              <div class="prompt-actions">
+                <button class="btn" id="genEditToggle" type="button">
+                  ✎ Edit &amp; regenerate
+                </button>
+              </div>
+            </details>
+          </div>
+
           <div class="gen-status" id="genStatus"></div>
+
           <div class="viewer-wrap gen-viewer-wrap" hidden id="genViewerWrap">
             <div class="viewer" id="genViewer"></div>
+            <div class="print-check" id="genPrintCheck"></div>
             <div class="viewer-bar">
               <button class="btn" id="genRegen">↻ Regenerate</button>
+              <button class="btn" id="genReset">↺ Different idea</button>
               <button class="btn btn-primary" id="genDownload" disabled>
                 ⬇ Download STL
               </button>
@@ -197,7 +256,7 @@
     </div>
 
     <footer class="app-footer">
-      <span>PrintBuddy <strong id="appVersion">v1.0.0</strong></span>
+      <span>PrintBuddy <strong id="appVersion">v1.1.0</strong></span>
       <span>·</span>
       <span>The Good Neighbor Guard</span>
       <span>·</span>
