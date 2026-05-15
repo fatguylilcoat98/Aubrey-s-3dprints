@@ -1,0 +1,211 @@
+<!doctype html>
+<!--
+  PrintBuddy — The Good Neighbor Guard
+  Built by Christopher Hughes · Sacramento, CA
+  For Aubrey, with love
+  Created with the help of AI collaborators (Claude · GPT · Gemini · Groq)
+  Truth · Safety · We Got Your Back
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#FF8A65" />
+    <meta
+      name="description"
+      content="PrintBuddy — find, generate, or build 3D-printable models right in your browser. No installs."
+    />
+    <title>PrintBuddy · The Good Neighbor Guard</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23FF8A65'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='white' font-family='Arial'%3EP%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./css/styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+          "@jscad/modeling": "https://cdn.jsdelivr.net/npm/@jscad/modeling@2.12.4/+esm"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">P</div>
+        <div class="brand-text">
+          <h1>PrintBuddy</h1>
+          <p class="tagline">Truth · Safety · We Got Your Back</p>
+        </div>
+      </div>
+      <div class="brand-sub">The Good Neighbor Guard</div>
+      <button
+        class="settings-toggle"
+        id="settingsToggle"
+        aria-expanded="false"
+        aria-controls="printSettings"
+      >
+        ⚙ Print Settings
+      </button>
+    </header>
+
+    <nav class="tabbar" role="tablist" aria-label="Modes">
+      <button
+        class="tab is-active"
+        role="tab"
+        aria-selected="true"
+        data-mode="build"
+      >
+        <span class="tab-num">1</span> Build Something
+      </button>
+      <button class="tab" role="tab" aria-selected="false" data-mode="find">
+        <span class="tab-num">2</span> Find a Design
+      </button>
+      <button class="tab" role="tab" aria-selected="false" data-mode="generate">
+        <span class="tab-num">3</span> Generate with AI
+      </button>
+    </nav>
+
+    <div class="layout">
+      <main class="panels">
+        <!-- MODE 3: BUILD (shipped first; most reliable) -->
+        <section class="panel is-active" id="panel-build" data-mode="build">
+          <div class="panel-head">
+            <h2>Build Something Custom</h2>
+            <p>
+              Pick a template, set your numbers, and PrintBuddy makes a
+              ready-to-print STL right here in your browser. Nothing to install.
+            </p>
+          </div>
+          <div class="build-grid">
+            <aside class="template-list" id="templateList" aria-label="Templates"></aside>
+            <div class="build-main">
+              <div class="build-form" id="buildForm"></div>
+              <div class="viewer-wrap">
+                <div class="viewer" id="buildViewer"></div>
+                <div class="viewer-bar">
+                  <span class="viewer-dims" id="buildDims">—</span>
+                  <button class="btn btn-primary" id="downloadStl" disabled>
+                    ⬇ Download STL
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MODE 1: FIND -->
+        <section class="panel" id="panel-find" data-mode="find">
+          <div class="panel-head">
+            <h2>Find a Design</h2>
+            <p>
+              Search Printables, MakerWorld, and Thingiverse. Click through to
+              the source to download.
+            </p>
+          </div>
+          <form class="search-bar" id="findForm">
+            <input
+              type="search"
+              id="findInput"
+              placeholder="dragon planter, succulent pot, phone stand…"
+              autocomplete="off"
+            />
+            <button class="btn btn-primary" type="submit">Search</button>
+          </form>
+          <div class="source-toggles" id="sourceToggles">
+            <label><input type="checkbox" value="printables" checked /> Printables</label>
+            <label><input type="checkbox" value="makerworld" checked /> MakerWorld</label>
+            <label><input type="checkbox" value="thingiverse" checked /> Thingiverse</label>
+          </div>
+          <div class="find-status" id="findStatus"></div>
+          <div class="card-grid" id="findResults"></div>
+        </section>
+
+        <!-- MODE 2: GENERATE -->
+        <section class="panel" id="panel-generate" data-mode="generate">
+          <div class="panel-head">
+            <h2>Generate with AI</h2>
+            <p>
+              Describe what you want and an AI builds a 3D model. Honest heads-up
+              below — these need cleanup before they print well.
+            </p>
+          </div>
+          <div class="warn-box">
+            ⚠ AI-generated models may need cleanup before printing. Check for
+            thin walls, floating bits, and add supports where needed.
+          </div>
+          <form class="search-bar" id="genForm">
+            <input
+              type="text"
+              id="genInput"
+              placeholder="a small dragon figurine sitting, a heart-shaped keychain…"
+              autocomplete="off"
+            />
+            <button class="btn btn-primary" type="submit" id="genBtn">
+              Generate
+            </button>
+          </form>
+          <div class="gen-status" id="genStatus"></div>
+          <div class="viewer-wrap gen-viewer-wrap" hidden id="genViewerWrap">
+            <div class="viewer" id="genViewer"></div>
+            <div class="viewer-bar">
+              <button class="btn" id="genRegen">↻ Regenerate</button>
+              <button class="btn btn-primary" id="genDownload" disabled>
+                ⬇ Download STL
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- PRINT SETTINGS (all modes) -->
+      <aside class="print-settings" id="printSettings" aria-label="Print settings">
+        <h3>Print Settings</h3>
+        <p class="ps-hint">Set once — saved on this computer.</p>
+
+        <label class="field">
+          <span>Printer model</span>
+          <select id="psPrinter"></select>
+        </label>
+        <label class="field">
+          <span>Filament type</span>
+          <select id="psFilament">
+            <option>PLA</option>
+            <option>PETG</option>
+            <option>TPU</option>
+            <option>ABS</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Filament color</span>
+          <input type="color" id="psColor" value="#FF8A65" />
+        </label>
+        <label class="field">
+          <span>Nozzle size</span>
+          <select id="psNozzle">
+            <option value="0.2">0.2 mm</option>
+            <option value="0.4" selected>0.4 mm</option>
+            <option value="0.6">0.6 mm</option>
+            <option value="0.8">0.8 mm</option>
+          </select>
+        </label>
+
+        <div class="ps-out" id="psRecommend">
+          <h4>Recommended</h4>
+          <ul id="psRecList"></ul>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="app-footer">
+      <span>PrintBuddy <strong id="appVersion">v1.0.0</strong></span>
+      <span>·</span>
+      <span>The Good Neighbor Guard</span>
+      <span>·</span>
+      <span>Built by Christopher Hughes · Sacramento, CA · for Aubrey</span>
+    </footer>
+
+    <div class="settings-backdrop" id="settingsBackdrop" hidden></div>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

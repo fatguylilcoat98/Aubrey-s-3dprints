@@ -1,0 +1,22 @@
+{
+  "name": "printbuddy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PrintBuddy — a browser-based 3D print helper. The Good Neighbor Guard.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "compression": "^1.7.5",
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  },
+  "author": "Christopher Hughes",
+  "license": "MIT"
+}
