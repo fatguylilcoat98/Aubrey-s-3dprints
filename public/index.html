@@ -30,6 +30,15 @@
   </head>
   <body>
     <header class="app-header">
+      <button
+        class="hamburger"
+        id="menuToggle"
+        aria-expanded="false"
+        aria-controls="mainMenu"
+        aria-label="Open menu"
+      >
+        <span></span><span></span><span></span>
+      </button>
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">P</div>
         <div class="brand-text">
@@ -47,6 +56,31 @@
         ⚙ Print Settings
       </button>
     </header>
+
+    <nav class="main-menu" id="mainMenu" aria-label="Menu">
+      <div class="main-menu-head">
+        <strong>Menu</strong>
+        <button class="menu-close" id="menuClose" aria-label="Close menu">✕</button>
+      </div>
+      <p class="menu-section">Modes</p>
+      <button class="menu-item" data-go="build">
+        <span class="mi-num">1</span>
+        <span><strong>Build Something</strong><i>Parametric templates → STL</i></span>
+      </button>
+      <button class="menu-item" data-go="find">
+        <span class="mi-num">2</span>
+        <span><strong>Find a Design</strong><i>Search Printables &amp; more</i></span>
+      </button>
+      <button class="menu-item" data-go="generate">
+        <span class="mi-num">3</span>
+        <span><strong>Generate with AI</strong><i>Describe it, AI builds it</i></span>
+      </button>
+      <p class="menu-section">Setup</p>
+      <button class="menu-item" data-go="settings">
+        <span class="mi-num">⚙</span>
+        <span><strong>Print Settings</strong><i>Printer, filament, nozzle</i></span>
+      </button>
+    </nav>
 
     <nav class="tabbar" role="tablist" aria-label="Modes">
       <button
