@@ -426,11 +426,41 @@ function aiAvailable() {
   return Boolean(TRIPO_API_KEY || MESHY_API_KEY);
 }
 
+// Tripo's text-to-3D `prompt` has a hard length cap (rejected with a
+// generic "one or more of your parameters is invalid" when exceeded).
+// Claude's print-optimized prompts routinely run 400–700 chars, so clamp
+// to a safe length, preferring a clean sentence boundary.
+const PROMPT_LIMIT = 200;
+function clampPrompt(raw) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= PROMPT_LIMIT) return text;
+  const cut = text.slice(0, PROMPT_LIMIT);
+  const lastStop = Math.max(
+    cut.lastIndexOf('. '),
+    cut.lastIndexOf('! '),
+    cut.lastIndexOf('? ')
+  );
+  let out;
+  if (lastStop >= PROMPT_LIMIT * 0.5) {
+    out = cut.slice(0, lastStop + 1); // keep the terminating punctuation
+  } else {
+    const lastSpace = cut.lastIndexOf(' ');
+    out = (lastSpace > 0 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:.]+$/, '');
+  }
+  return out.trim();
+}
+
 app.post('/api/generate', async (req, res) => {
-  const prompt = String(req.body?.prompt || '').trim();
+  const rawPrompt = String(req.body?.prompt || '').trim();
+  const prompt = clampPrompt(rawPrompt);
   const provider =
     (req.body?.provider || (TRIPO_API_KEY ? 'tripo' : 'meshy')).toLowerCase();
   if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
+  if (rawPrompt.length !== prompt.length) {
+    console.log(
+      `[generate] prompt clamped ${rawPrompt.length}→${prompt.length} chars: ${prompt}`
+    );
+  }
   if (!aiAvailable()) {
     return res.status(503).json({
       error: 'no_api_key',
@@ -452,11 +482,15 @@ app.post('/api/generate', async (req, res) => {
         body: JSON.stringify({ mode: 'preview', prompt, art_style: 'realistic' }),
       });
       const j = await r.json();
-      if (!r.ok) throw new Error(j?.message || `Meshy HTTP ${r.status}`);
+      if (!r.ok) {
+        console.error('[generate] Meshy rejected:', r.status, JSON.stringify(j));
+        throw new Error(j?.message || `Meshy HTTP ${r.status}`);
+      }
       return res.json({ provider: 'meshy', taskId: j.result });
     }
 
-    // Tripo (default)
+    // Tripo (default). Minimal documented v2 OpenAPI shape — no speculative
+    // params (an unknown/deprecated field triggers the same generic error).
     if (!TRIPO_API_KEY)
       return res.status(503).json({ error: 'tripo_not_configured' });
     const r = await fetch('https://api.tripo3d.ai/v2/openapi/task', {
@@ -468,8 +502,16 @@ app.post('/api/generate', async (req, res) => {
       body: JSON.stringify({ type: 'text_to_model', prompt }),
     });
     const j = await r.json();
-    if (!r.ok || j.code !== 0)
-      throw new Error(j?.message || `Tripo HTTP ${r.status}`);
+    if (!r.ok || j.code !== 0) {
+      // Full body to Render logs so the rejected field is unambiguous.
+      console.error(
+        `[generate] Tripo rejected (HTTP ${r.status}, code ${j?.code}). ` +
+          `prompt(${prompt.length}): ${JSON.stringify(prompt)} ` +
+          `resp: ${JSON.stringify(j)}`
+      );
+      const detail = [j?.message, j?.suggestion].filter(Boolean).join(' — ');
+      throw new Error(detail || `Tripo HTTP ${r.status}`);
+    }
     return res.json({ provider: 'tripo', taskId: j.data.task_id });
   } catch (err) {
     res.status(502).json({ error: 'provider_error', message: err.message });
