@@ -17,6 +17,7 @@
 import express from 'express';
 import compression from 'compression';
 import cors from 'cors';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,10 +30,46 @@ const MESHY_API_KEY = process.env.MESHY_API_KEY || '';
 const THINGIVERSE_API_KEY = process.env.THINGIVERSE_API_KEY || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 
+// When PrintBuddy is served behind a reverse proxy on a subpath (e.g.
+// thegoodneighborguard.com/printbuddy → this service), set BASE_PATH so
+// the HTML emits prefixed asset/API URLs and the server strips the
+// prefix back off internally. Unset = behaves exactly as before (root).
+const BASE_PATH = (process.env.BASE_PATH || '').replace(/\/+$/, '');
+
+// Pre-render index.html with the right <base> + API base baked in.
+const INDEX_HTML = fs
+  .readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8')
+  .replace(
+    '<!--PB_HEAD-->',
+    `<base href="${BASE_PATH}/" />\n` +
+      `    <script>window.PRINTBUDDY_API_BASE=${JSON.stringify(BASE_PATH)};</script>`
+  );
+
+// Strip the proxy prefix so every existing route keeps matching unchanged.
+if (BASE_PATH) {
+  app.use((req, _res, next) => {
+    const u = req.url;
+    if (
+      u === BASE_PATH ||
+      u.startsWith(BASE_PATH + '/') ||
+      u.startsWith(BASE_PATH + '?')
+    ) {
+      req.url = u.slice(BASE_PATH.length) || '/';
+      if (req.url[0] !== '/') req.url = '/' + req.url;
+    }
+    next();
+  });
+}
+
 app.use(compression());
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+app.use(
+  express.static(path.join(__dirname, 'public'), {
+    extensions: ['html'],
+    index: false,
+  })
+);
 
 const VERSION = '1.1.0';
 
@@ -43,6 +80,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     version: VERSION,
+    basePath: BASE_PATH || '/',
     capabilities: {
       libraryProxy: true,
       thingiverse: Boolean(THINGIVERSE_API_KEY),
@@ -481,11 +519,12 @@ app.get('/api/generate/:provider/:taskId', async (req, res) => {
 /*  SPA fallback                                                      */
 /* ------------------------------------------------------------------ */
 app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.type('html').send(INDEX_HTML);
 });
 
 app.listen(PORT, () => {
   console.log(`PrintBuddy v${VERSION} listening on :${PORT}`);
+  console.log(`  Base path: ${BASE_PATH || '/ (root)'}`);
   console.log(
     `  AI generation: ${aiAvailable() ? 'enabled' : 'disabled (no API key)'}`
   );

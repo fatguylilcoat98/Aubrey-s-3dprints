@@ -81,6 +81,61 @@ site by adding this before the app script in `public/index.html`:
 <script>window.PRINTBUDDY_API_BASE = "https://your-backend.onrender.com";</script>
 ```
 
+### Option C — Behind a reverse proxy on a subpath
+
+Some networks block `*.onrender.com`. Route PrintBuddy through an
+already-trusted domain instead, e.g. `thegoodneighborguard.com/printbuddy`.
+
+**1. PrintBuddy side (this repo) — already wired.** Set `BASE_PATH` on the
+PrintBuddy service (it's in `render.yaml` as `/printbuddy`). The server then
+emits `<base href="/printbuddy/">` + a matching API base into the HTML and
+strips the prefix back off internally, so every asset and `/api/*` call
+resolves under the subpath. Unset `BASE_PATH` to serve at root again — no
+other change needed.
+
+**2. GNG website side — add a path-preserving rewrite** (NOT a redirect, so
+the address bar stays on the GNG domain). The prefix must be kept in the
+destination because PrintBuddy serves under `/printbuddy`:
+
+- **Render** (static site or service) `render.yaml`:
+  ```yaml
+  routes:
+    - type: rewrite
+      source: /printbuddy
+      destination: https://printbuddy.onrender.com/printbuddy
+    - type: rewrite
+      source: /printbuddy/*
+      destination: https://printbuddy.onrender.com/printbuddy/:splat
+  ```
+- **Netlify** `_redirects`:
+  ```
+  /printbuddy       https://printbuddy.onrender.com/printbuddy       200
+  /printbuddy/*     https://printbuddy.onrender.com/printbuddy/:splat 200
+  ```
+- **Vercel** `vercel.json`:
+  ```json
+  { "rewrites": [
+    { "source": "/printbuddy", "destination": "https://printbuddy.onrender.com/printbuddy" },
+    { "source": "/printbuddy/:path*", "destination": "https://printbuddy.onrender.com/printbuddy/:path*" }
+  ] }
+  ```
+- **Express / Node** GNG app:
+  ```js
+  import { createProxyMiddleware } from 'http-proxy-middleware';
+  app.use('/printbuddy', createProxyMiddleware({
+    target: 'https://printbuddy.onrender.com',
+    changeOrigin: true, // path kept as /printbuddy/* — do not rewrite it
+  }));
+  ```
+- **Apache** (`.htaccess`, needs `mod_proxy`):
+  ```apache
+  ProxyPass        /printbuddy https://printbuddy.onrender.com/printbuddy
+  ProxyPassReverse /printbuddy https://printbuddy.onrender.com/printbuddy
+  ```
+
+No DNS or registrar changes are required — this is pure HTTP routing on an
+existing domain. Everything stays HTTPS end to end (no mixed content).
+
 ---
 
 ## Project structure

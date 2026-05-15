@@ -12,6 +12,11 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Served behind thegoodneighborguard.com/printbuddy reverse proxy.
+      # Makes assets + API resolve under the subpath. Remove (or set empty)
+      # to serve PrintBuddy at the domain root instead.
+      - key: BASE_PATH
+        value: /printbuddy
       - key: TRIPO_API_KEY
         sync: false
       - key: MESHY_API_KEY
