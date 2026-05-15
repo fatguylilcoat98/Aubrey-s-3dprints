@@ -1,0 +1,28 @@
+# PrintBuddy — The Good Neighbor Guard
+# Render deployment. The whole app (static SPA + Mode 1/2 proxy) runs from
+# this one Node web service. For a no-backend deploy (Modes 1 & 3 only via
+# GitHub Pages / Netlify) just publish the /public folder as a static site.
+services:
+  - type: web
+    name: printbuddy
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Optional: only set BASE_PATH (e.g. /printbuddy) if you serve this
+      # behind a path-preserving reverse proxy. For the recommended custom
+      # subdomain (printbuddy.thegoodneighborguard.com) leave it UNSET so
+      # PrintBuddy serves at the subdomain root. See README "Option D".
+      # - key: BASE_PATH
+      #   value: /printbuddy
+      - key: TRIPO_API_KEY
+        sync: false
+      - key: MESHY_API_KEY
+        sync: false
+      - key: THINGIVERSE_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
