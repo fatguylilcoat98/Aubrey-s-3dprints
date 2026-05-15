@@ -136,6 +136,41 @@ destination because PrintBuddy serves under `/printbuddy`:
 No DNS or registrar changes are required — this is pure HTTP routing on an
 existing domain. Everything stays HTTPS end to end (no mixed content).
 
+### Option D — Custom subdomain on Render (recommended when `*.onrender.com` is blocked)
+
+If a network filter blocks `onrender.com` (e.g. a school district), the most
+reliable fix is to put PrintBuddy on a subdomain of an already-trusted
+domain. The filter sees `printbuddy.thegoodneighborguard.com`, not
+`onrender.com`. No reverse proxy, no changes to the main website, works
+regardless of how that site is hosted (GitHub Pages included), and
+PrintBuddy serves at the subdomain **root** (leave `BASE_PATH` unset).
+
+**1. Render dashboard** → the PrintBuddy web service → **Settings →
+Custom Domains → Add Custom Domain** → enter
+`printbuddy.thegoodneighborguard.com`. Render shows the exact CNAME target
+to use (typically `<service>.onrender.com`).
+
+**2. Porkbun** (DNS for `thegoodneighborguard.com`) → Domain → **DNS /
+Edit** → add a record:
+
+| Type  | Host        | Answer / Target                | TTL |
+|-------|-------------|--------------------------------|-----|
+| CNAME | `printbuddy`| *(the target Render showed)*   | 600 |
+
+**3.** Wait for DNS to propagate (minutes to ~an hour). Render then
+auto-issues a free Let's Encrypt TLS cert — the subdomain is HTTPS.
+
+**4.** Test: open `https://printbuddy.thegoodneighborguard.com` and have
+Aubrey load it from her work computer.
+
+> Honest caveat: most school filters categorize by the requested
+> hostname / TLS SNI (here `printbuddy.thegoodneighborguard.com`), so this
+> passes. A filter that recursively follows the CNAME and categorizes by
+> the final `onrender.com` target could still block it — if that happens,
+> the real fix is hosting PrintBuddy off Render entirely (a provider not on
+> the blocklist, or alongside the GNG site). Aubrey's work computer is the
+> only test that confirms it.
+
 ---
 
 ## Project structure
